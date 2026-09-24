@@ -3,6 +3,7 @@ import assert from 'node:assert';
 
 // Import specific tool implementations for detailed testing
 import { discoverTools } from '../lib/tools.js';
+import { roomsCache } from '../tools/webex-public-workspace/webex-messaging/list-rooms.js';
 
 describe('Tool Implementation Details', () => {
   let originalEnv;
@@ -14,6 +15,10 @@ describe('Tool Implementation Details', () => {
     // Save original environment and fetch
     originalEnv = { ...process.env };
     originalFetch = global.fetch;
+
+    // list_rooms caches responses, so each test needs a cold cache to observe
+    // the outgoing request.
+    roomsCache.clear();
     
     // Set test environment variables
     process.env.WEBEX_PUBLIC_WORKSPACE_API_KEY = 'test-token-123';

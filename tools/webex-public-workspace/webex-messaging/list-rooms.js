@@ -1,4 +1,11 @@
 import { getWebexUrl, getWebexHeaders, getWebexJsonHeaders } from '../../../lib/webex-config.js';
+import { TtlCache } from '../../../lib/ttl-cache.js';
+
+// Room membership is stable across a research session, but callers often need
+// the full list repeatedly to locate spaces before reading messages. Cache it
+// so only the first call pays the round trip.
+export const roomsCache = new TtlCache({ ttlMs: 15 * 60 * 1000 });
+
 /**
  * Function to list rooms for the authenticated user in Webex.
  *
@@ -10,9 +17,15 @@ import { getWebexUrl, getWebexHeaders, getWebexJsonHeaders } from '../../../lib/
  * @param {string} [args.to] - Filters rooms made public before this time.
  * @param {string} [args.sortBy="id"] - The field to sort the results by.
  * @param {number} [args.max=100] - The maximum number of rooms to return.
+ * @param {boolean} [args.refresh=false] - Bypass the cache and re-fetch.
  * @returns {Promise<Object>} - The result of the room listing.
  */
-const executeFunction = async ({ teamId, type, orgPublicSpaces, from, to, sortBy = 'id', max = 100 }) => {
+const executeFunction = async ({ teamId, type, orgPublicSpaces, from, to, sortBy = 'id', max = 100, refresh = false }) => {
+  const cacheKey = JSON.stringify({ teamId, type, orgPublicSpaces, from, to, sortBy, max });
+  if (!refresh) {
+    const cached = roomsCache.get(cacheKey);
+    if (cached) return cached;
+  }
 
   try {
     // Construct the URL with query parameters
@@ -55,7 +68,7 @@ const executeFunction = async ({ teamId, type, orgPublicSpaces, from, to, sortBy
 
     // Parse and return the response data
     const data = await response.json();
-    return data;
+    return roomsCache.set(cacheKey, data);
   } catch (error) {
     console.error('Error listing rooms:', error);
     return { error: 'An error occurred while listing rooms.' };
@@ -72,7 +85,7 @@ const apiTool = {
     type: 'function',
     function: {
       name: 'list_rooms',
-      description: 'List rooms for the authenticated user in Webex.',
+      description: 'List rooms for the authenticated user in Webex. Results are cached for 15 minutes; pass refresh=true to bypass.',
       parameters: {
         type: 'object',
         properties: {
@@ -104,6 +117,10 @@ const apiTool = {
           max: {
             type: 'integer',
             description: 'The maximum number of rooms to return.'
+          },
+          refresh: {
+            type: 'boolean',
+            description: 'Bypass the 15-minute room list cache and re-fetch from Webex.'
           }
         },
         required: []
